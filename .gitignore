@@ -1,0 +1,6 @@
+# VS Code
+.vscode/*
+!.vscode/arduino.json
+
+# Build
+.build/
