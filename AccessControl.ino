@@ -55,9 +55,8 @@
 LiquidCrystal lcd(LCD_RS_PIN, LCD_EN_PIN, LCD_D4_PIN, LCD_D5_PIN, LCD_D6_PIN, LCD_D7_PIN);
 
 // KEYPAD
-uint8_t key = KEYPAD_INVALID_VALUE;
+int8_t key = KEYPAD_INVALID_VALUE;
 TaskHandle_t keypadHandle = NULL;
-void keypadTask(void *parameters);
 
 // ********************************************
 // ****                Setup               ****
@@ -96,9 +95,8 @@ void enableKeypadInterrupt()
 void readKey()
 {
   detachInterrupt(KEYPAD_SDO_PIN);
-  uint8_t keyStatus = KEYPAD_INVALID_VALUE;
-
-  for (uint8_t number = 1; number <= KEYPAD_NUM_OF_KEYS; number++)
+  int8_t keyStatus = KEYPAD_INVALID_VALUE;
+  for (int8_t number = 1; number <= KEYPAD_NUM_OF_KEYS; number++)
   {
     digitalWrite(KEYPAD_SCL_PIN, LOW);
     vTaskDelay(1);
@@ -122,10 +120,9 @@ void keypadTask(void *parameters)
   {
     enableKeypadInterrupt();
     vTaskSuspend(keypadHandle);
-    uint8_t number = key;
+    int8_t number = key;
     if (number >= 13 && number <= 16 && checkAuth(number))
     {
-      lcd.clear();
       switch (number)
       {
         case KEYPAD_ADD_CARD_NUM:
@@ -154,8 +151,8 @@ int checkPassword()
   lcd.print("Password: ");
   Password password = Password("12345677");
 
-  uint8_t i = 0;
-  uint8_t number = KEYPAD_INVALID_VALUE;
+  int8_t i = 0;
+  int8_t number = KEYPAD_INVALID_VALUE;
   while (i < PASSWORD_MAX_LENGTH)
   {
     enableKeypadInterrupt();
@@ -172,14 +169,15 @@ int checkPassword()
       i++;
     }
   }
-
+  
+  lcd.clear();
   if (number == KEYPAD_BACK_NUM)
     return ACTION_BACK;
   else
     return password.evaluate() ? ACTION_ALLOW_ACCESS : ACTION_WRONG_PASS;
 }
 
-bool checkAuth(uint8_t selectedNumber)
+bool checkAuth(int8_t selectedNumber)
 {
   switch (checkPassword())
   {
