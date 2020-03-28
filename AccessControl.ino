@@ -3,6 +3,8 @@
 // ********************************************
 #include <LiquidCrystal.h>
 #include <Password.h>
+#include <SPI.h>
+#include <MFRC522.h>
 
 // ********************************************
 // ****               Define               ****
@@ -18,27 +20,27 @@
 #define SERIAL_BAUD_RATE 9600
 
 // KEYPAD
-#define KEYPAD_SCL_PIN 26
-#define KEYPAD_SDO_PIN 25
+#define KEYPAD_SCL_PIN 22
+#define KEYPAD_SDO_PIN 21
 #define KEYPAD_NUM_OF_KEYS 16
+#define KEYPAD_ZERO_NUMBER_KEY 10
 #define KEYPAD_CONFIRM_NUM 11
 #define KEYPAD_BACK_NUM 12
 #define KEYPAD_ADD_CARD_NUM 13
 #define KEYPAD_REMOVE_CARD_NUM 14
-#define KEYPAD_CARD_INFO_NUM 15
+#define KEYPAD_INFO_CARD_NUM 15
 #define KEYPAD_CHANGE_PASSWORD_NUM 16
 #define KEYPAD_INVALID_VALUE -1
-#define KEYPAD_ZERO_NUMBER_KEY 10
 
 // CHARACTER LCD
 #define LCD_ROWS 4
 #define LCD_COLUMNS 20
-#define LCD_RS_PIN 17
-#define LCD_EN_PIN 16
-#define LCD_D4_PIN 27
-#define LCD_D5_PIN 14
-#define LCD_D6_PIN 5
-#define LCD_D7_PIN 23
+#define LCD_RS_PIN 26
+#define LCD_EN_PIN 25
+#define LCD_D4_PIN 17
+#define LCD_D5_PIN 16
+#define LCD_D6_PIN 27
+#define LCD_D7_PIN 14
 
 // ACTIONS
 #define ACTION_BACK -1
@@ -47,6 +49,11 @@
 
 // PASSWORD
 #define PASSWORD_MAX_LENGTH 8
+
+// SPI
+// SCLK = 18, MISO = 19, MOSI = 23
+#define SPI_RFID_SLAVE_PIN 13
+#define SPI_RFID_SCLK_PIN 18
 
 // ********************************************
 // ****          Global Variables          ****
@@ -58,10 +65,13 @@ LiquidCrystal lcd(LCD_RS_PIN, LCD_EN_PIN, LCD_D4_PIN, LCD_D5_PIN, LCD_D6_PIN, LC
 int8_t key = KEYPAD_INVALID_VALUE;
 TaskHandle_t keypadHandle = NULL;
 
+// RFID
+MFRC522 mfrc522(SPI_RFID_SLAVE_PIN, SPI_RFID_SCLK_PIN);
+TaskHandle_t checkAccessHandle = NULL;
+
 // ********************************************
 // ****                Setup               ****
 // ********************************************
-
 void setup()
 {
   // SERIAL
@@ -75,6 +85,13 @@ void setup()
   pinMode(KEYPAD_SDO_PIN, INPUT_PULLUP);
   digitalWrite(KEYPAD_SCL_PIN, HIGH);
   xTaskCreatePinnedToCore(keypadTask, "Keypad Task", 4096, NULL, 2, &keypadHandle, ARDUINO_RUNNING_CORE);
+
+  // RFID
+  pinMode(SPI_RFID_SLAVE_PIN, OUTPUT);
+  digitalWrite(SPI_RFID_SLAVE_PIN, LOW);
+  xTaskCreatePinnedToCore(checkAccessTask, "Check Access Task", 8192, NULL, 1, &checkAccessHandle, ARDUINO_RUNNING_CORE);
+  SPI.begin();    // Initiate  SPI bus
+  mfrc522.PCD_Init();   // Initiate MFRC522
 }
 
 // ********************************************
@@ -131,7 +148,7 @@ void keypadTask(void *parameters)
         case KEYPAD_REMOVE_CARD_NUM:
           Serial.println("Remove Card");
           break;
-        case KEYPAD_CARD_INFO_NUM:
+        case KEYPAD_INFO_CARD_NUM:
           Serial.println("Show Card Info");
           break;
         case KEYPAD_CHANGE_PASSWORD_NUM:
@@ -190,5 +207,31 @@ bool checkAuth(int8_t selectedNumber)
     case ACTION_ALLOW_ACCESS:
       Serial.println("Allow");
       return true;
+  }
+}
+
+// ********************************************
+// ****         Control Functions          ****
+// ********************************************
+String waitingForUser() {
+  String content;
+  do {
+    // Look for new cards
+    if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
+      for (byte i = 0; i < mfrc522.uid.size; i++) {
+        content.concat(String(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " "));
+        content.concat(String(mfrc522.uid.uidByte[i], HEX));     // Saves the ID as hexadecimal, not decimal
+      }
+      content.toUpperCase();
+    }
+  }while (content == NULL);
+
+  return content.substring(1);
+}
+
+void checkAccessTask(void *parameters) {
+  while (true) {
+    String id = waitingForUser();
+    Serial.println("Authorized access");
   }
 }
