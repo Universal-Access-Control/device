@@ -6,6 +6,7 @@
 #include <SPI.h>
 #include <MFRC522.h>
 #include <SD.h>
+#include <sqlite3.h>
 
 // ********************************************
 // ****               Define               ****
@@ -71,6 +72,9 @@ TaskHandle_t keypadHandle = NULL;
 MFRC522 mfrc522(SPI_RFID_SLAVE_PIN, SPI_RFID_SCLK_PIN);
 TaskHandle_t checkAccessHandle = NULL;
 
+// SQLite
+sqlite3 *dbAccessControl;
+
 // ********************************************
 // ****                Setup               ****
 // ********************************************
@@ -86,18 +90,24 @@ void setup()
   pinMode(KEYPAD_SCL_PIN, OUTPUT);
   pinMode(KEYPAD_SDO_PIN, INPUT_PULLUP);
   digitalWrite(KEYPAD_SCL_PIN, HIGH);
-  xTaskCreatePinnedToCore(keypadTask, "Keypad Task", 4096, NULL, 2, &keypadHandle, ARDUINO_RUNNING_CORE);
 
   // RFID
   pinMode(SPI_RFID_SLAVE_PIN, OUTPUT);
   digitalWrite(SPI_RFID_SLAVE_PIN, HIGH);
-  xTaskCreatePinnedToCore(checkAccessTask, "Check Access Task", 8192, NULL, 1, &checkAccessHandle, ARDUINO_RUNNING_CORE);
   SPI.begin();    // Initiate  SPI bus
   mfrc522.PCD_Init();   // Initiate MFRC522
 
   // SD
   if(! storageInit())
     return;
+
+  // SQLite
+  if(! sqliteInit())
+    return;
+
+  // TASKS
+  xTaskCreatePinnedToCore(keypadTask, "Keypad Task", 4096, NULL, 2, &keypadHandle, ARDUINO_RUNNING_CORE);
+  xTaskCreatePinnedToCore(checkAccessTask, "Check Access Task", 8192, NULL, 1, &checkAccessHandle, ARDUINO_RUNNING_CORE);
 }
 
 // ********************************************
@@ -114,6 +124,26 @@ bool storageInit() {
   setSlaveSelect(SPI_SD_SLAVE_PIN, SPI_RFID_SLAVE_PIN);
   
   if (!SD.begin(SPI_SD_SLAVE_PIN))
+    return false;
+
+  setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
+  return true;
+}
+
+bool sqliteInit() {
+  setSlaveSelect(SPI_SD_SLAVE_PIN, SPI_RFID_SLAVE_PIN);
+
+  const char* createTbUsers = "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY NOT NULL, name VARCHAR(100) NULL, cardID VARCHAR(100) NOT NULL, date VARCHAR(100) NOT NULL)";
+  const char* createTbLogs = "CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY NOT NULL, cardID VARCHAR(100) NOT NULL, date VARCHAR(100) NOT NULL, action VARCHAR(100) NOT NULL)";
+
+  sqlite3_initialize();
+  if (! databaseOpen(&dbAccessControl, "/sd/Access_Control.db"))
+    return false;
+
+  if (! databaseExec(dbAccessControl, createTbUsers))
+    return false;
+
+  if (! databaseExec(dbAccessControl, createTbLogs))
     return false;
 
   setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
@@ -227,6 +257,32 @@ bool checkAuth(int8_t selectedNumber)
       Serial.println("Allow");
       return true;
   }
+}
+
+// ********************************************
+// ****        Database Functions          ****
+// ********************************************
+bool databaseOpen(sqlite3 **db, const char *filename) {
+  if (sqlite3_open(filename, db))
+    return false;
+
+  return true;
+}
+
+static int databaseCallback(void *data, int argc, char **argv, char **azColName) {
+  return 0;
+}
+
+bool databaseExec(sqlite3 *db, const char *sql) {
+  char *zErrMsg = 0;
+  int rc = sqlite3_exec(db, sql, databaseCallback, NULL, &zErrMsg);
+
+  if (rc != SQLITE_OK) {
+    sqlite3_free(zErrMsg);
+    sqlite3_close(db);
+    return false;
+  }
+  return true;
 }
 
 // ********************************************
