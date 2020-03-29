@@ -5,6 +5,7 @@
 #include <Password.h>
 #include <SPI.h>
 #include <MFRC522.h>
+#include <SD.h>
 
 // ********************************************
 // ****               Define               ****
@@ -52,6 +53,7 @@
 
 // SPI
 // SCLK = 18, MISO = 19, MOSI = 23
+#define SPI_SD_SLAVE_PIN 5
 #define SPI_RFID_SLAVE_PIN 13
 #define SPI_RFID_SCLK_PIN 18
 
@@ -88,10 +90,14 @@ void setup()
 
   // RFID
   pinMode(SPI_RFID_SLAVE_PIN, OUTPUT);
-  digitalWrite(SPI_RFID_SLAVE_PIN, LOW);
+  digitalWrite(SPI_RFID_SLAVE_PIN, HIGH);
   xTaskCreatePinnedToCore(checkAccessTask, "Check Access Task", 8192, NULL, 1, &checkAccessHandle, ARDUINO_RUNNING_CORE);
   SPI.begin();    // Initiate  SPI bus
   mfrc522.PCD_Init();   // Initiate MFRC522
+
+  // SD
+  if(! storageInit())
+    return;
 }
 
 // ********************************************
@@ -99,6 +105,19 @@ void setup()
 // ********************************************
 void loop()
 {
+}
+
+// ********************************************
+// ****       Initialize Functions         ****
+// ********************************************
+bool storageInit() {
+  setSlaveSelect(SPI_SD_SLAVE_PIN, SPI_RFID_SLAVE_PIN);
+  
+  if (!SD.begin(SPI_SD_SLAVE_PIN))
+    return false;
+
+  setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
+  return true;
 }
 
 // ********************************************
@@ -213,6 +232,11 @@ bool checkAuth(int8_t selectedNumber)
 // ********************************************
 // ****         Control Functions          ****
 // ********************************************
+void setSlaveSelect(int enablePin, int disablePin) {
+  digitalWrite(enablePin, LOW);
+  digitalWrite(disablePin, HIGH);
+}
+
 String waitingForUser() {
   String content;
   do {
