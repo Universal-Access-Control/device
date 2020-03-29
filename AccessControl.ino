@@ -3,6 +3,9 @@
 // ********************************************
 #include <LiquidCrystal.h>
 #include <Password.h>
+#include <PubSubClient.h>
+#include <WiFi.h>
+#include "src/Mqtt/MqttUtils.h"
 
 // ********************************************
 // ****               Define               ****
@@ -48,6 +51,18 @@
 // PASSWORD
 #define PASSWORD_MAX_LENGTH 8
 
+// MQTT
+#define MQTT_PREFIX_DEVICE_ID "AccessControl-Client"
+#define MQTT_SERVER "xxx.xxx.xxx.xxx"
+#define MQTT_USER "user"
+#define MQTT_PASSWORD "*******"
+#define MQTT_PORT 1883
+#define MQTT_REGISTER_URL "AccessControl-Server/checkRegistered"
+
+// WIFI
+#define WIFI_SSID "ssid"
+#define WIFI_PASSWORD "********"
+
 // ********************************************
 // ****          Global Variables          ****
 // ********************************************
@@ -57,6 +72,16 @@ LiquidCrystal lcd(LCD_RS_PIN, LCD_EN_PIN, LCD_D4_PIN, LCD_D5_PIN, LCD_D6_PIN, LC
 // KEYPAD
 int8_t key = KEYPAD_INVALID_VALUE;
 TaskHandle_t keypadHandle = NULL;
+
+// WIFI
+TaskHandle_t wifiHandle = NULL;
+void wifiTask(void* params);
+
+// MQTT
+WiFiClient wifiClient;
+MqttUtils mqttUtils;
+PubSubClient client(wifiClient);
+TaskHandle_t mqttHandle = NULL;
 
 // ********************************************
 // ****                Setup               ****
@@ -75,6 +100,16 @@ void setup()
   pinMode(KEYPAD_SDO_PIN, INPUT_PULLUP);
   digitalWrite(KEYPAD_SCL_PIN, HIGH);
   xTaskCreatePinnedToCore(keypadTask, "Keypad Task", 4096, NULL, 2, &keypadHandle, ARDUINO_RUNNING_CORE);
+
+  // WIFI
+  xTaskCreate(wifiTask, "WiFi Task", 4096, NULL, 2, &wifiHandle);
+
+  // MQTT
+  createSubscribeList();
+  xTaskCreate(mqttTask, "MQTT Task", 2048, NULL, 2, &mqttHandle);
+
+  // REGISTER DEVICE
+  checkRegistration();
 }
 
 // ********************************************
@@ -169,7 +204,7 @@ int checkPassword()
       i++;
     }
   }
-  
+
   lcd.clear();
   if (number == KEYPAD_BACK_NUM)
     return ACTION_BACK;
@@ -191,4 +226,95 @@ bool checkAuth(int8_t selectedNumber)
       Serial.println("Allow");
       return true;
   }
+}
+
+// ********************************************
+// ****            WIFI Service            ****
+// ********************************************
+void wifiTask(void *params)
+{
+  while (true)
+  {
+    if (WiFi.status() != WL_CONNECTED)
+      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+    vTaskDelay(5000);
+  }
+}
+
+// ********************************************
+// ****            MQTT Service            ****
+// ********************************************
+void mqttTask(void *params)
+{
+  while (true)
+  {
+    if (!client.connected())
+    {
+      connectToServer();
+      vTaskDelay(10000);
+    }
+    else
+    {
+      client.loop();
+    }
+  }
+}
+
+void connectToServer()
+{
+  while (WiFi.status() != WL_CONNECTED);
+
+  client.setServer(MQTT_SERVER, MQTT_PORT);
+  client.setCallback(onReceive);
+
+  String connectionString = MQTT_PREFIX_DEVICE_ID + mqttUtils.chipId;
+  if(client.connect(connectionString.c_str(), MQTT_USER, MQTT_PASSWORD))
+  {
+    for (int index = 0; index < mqttUtils.count; index++)
+      client.subscribe(mqttUtils.topicList[index].url.c_str(), mqttUtils.topicList[index].qos);
+  }
+}
+
+void checkRegistration()
+{
+  if (mqttUtils.deviceRegistered)
+    return;
+
+  Serial.println("connecting to broker...");
+  while (!client.connected())
+    delay(2000);
+  Serial.println("connected to broker.");
+
+  Serial.println("Checking status of device...");
+  client.publish(MQTT_REGISTER_URL, mqttUtils.chipId.c_str());
+
+  while (!mqttUtils.deviceRegistered)
+    delay(2000);
+
+  Serial.println("Device Registered!");
+}
+
+void onReceive(char* topic, byte *payload, unsigned int length)
+{
+  for (int index = 0; index < mqttUtils.count; index++)
+  {
+    MqttTopic mattTopic = mqttUtils.topicList[index];
+    if(mattTopic.url == (String) topic)
+      mattTopic.handle(payload, length);
+  }
+}
+
+void createSubscribeList()
+{
+  mqttUtils.insert("/registered", registered);
+}
+
+void registered(byte *payload, unsigned int length)
+{
+  String status = "";
+  for (unsigned int i = 0; i < length; i++)
+    status += (char)payload[i];
+
+  mqttUtils.deviceRegistered = (status == "REGISTERED");
 }
