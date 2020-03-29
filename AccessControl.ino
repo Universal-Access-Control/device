@@ -7,6 +7,8 @@
 #include <MFRC522.h>
 #include <SD.h>
 #include <sqlite3.h>
+#include <WiFi.h>
+#include "time.h"
 
 // ********************************************
 // ****               Define               ****
@@ -58,6 +60,13 @@
 #define SPI_RFID_SLAVE_PIN 13
 #define SPI_RFID_SCLK_PIN 18
 
+// WiFi
+#define WIFI_SSID "********"                   // Your network SSID (name of wifi network)
+#define WIFI_PASSWORD "********"               // Your network password
+#define WIFI_NTPServer "pool.ntp.org"
+#define WIFI_GmtOffset_Sec 12600               // Tehran +3:30h ::>> +12600s
+#define WIFI_DayLightOffset_Sec 3600           // If Daylight Saving Time (DST) is off, WIFI_DayLightOffset_Sec = 0
+
 // ********************************************
 // ****          Global Variables          ****
 // ********************************************
@@ -105,6 +114,10 @@ void setup()
   if(! sqliteInit())
     return;
 
+  // WiFi
+  wifiInit();
+  configTime(WIFI_GmtOffset_Sec, WIFI_DayLightOffset_Sec, WIFI_NTPServer);
+
   // TASKS
   xTaskCreatePinnedToCore(keypadTask, "Keypad Task", 4096, NULL, 2, &keypadHandle, ARDUINO_RUNNING_CORE);
   xTaskCreatePinnedToCore(checkAccessTask, "Check Access Task", 8192, NULL, 1, &checkAccessHandle, ARDUINO_RUNNING_CORE);
@@ -148,6 +161,12 @@ bool sqliteInit() {
 
   setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
   return true;
+}
+
+void wifiInit() {
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED)
+    delay(500);
 }
 
 // ********************************************
@@ -314,4 +333,17 @@ void checkAccessTask(void *parameters) {
     String id = waitingForUser();
     Serial.println("Authorized access");
   }
+}
+
+// ********************************************
+// ****          Other Functions           ****
+// ********************************************
+String getTime() {
+  struct tm timeInfo;
+  char myDatetimeString[50];
+  if(!getLocalTime(& timeInfo))
+    return "Failed to obtain time";
+  
+  strftime(myDatetimeString, sizeof(myDatetimeString), "%B %d %Y, %A, %H:%M:%S %Z", &timeInfo);
+  return myDatetimeString;
 }
