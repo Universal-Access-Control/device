@@ -31,7 +31,7 @@
 #define KEYPAD_CONFIRM_NUM 11
 #define KEYPAD_BACK_NUM 12
 #define KEYPAD_ADD_USER_NUM 13
-#define KEYPAD_REMOVE_CARD_NUM 14
+#define KEYPAD_REMOVE_USER_NUM 14
 #define KEYPAD_INFO_CARD_NUM 15
 #define KEYPAD_CHANGE_PASSWORD_NUM 16
 #define KEYPAD_INVALID_VALUE -1
@@ -224,8 +224,10 @@ void keypadTask(void *parameters)
           addUser();
           vTaskResume(checkAccessHandle);
           break;
-        case KEYPAD_REMOVE_CARD_NUM:
-          Serial.println("Remove Card");
+        case KEYPAD_REMOVE_USER_NUM:
+          vTaskSuspend(checkAccessHandle);
+          removeUser();
+          vTaskResume(checkAccessHandle);
           break;
         case KEYPAD_INFO_CARD_NUM:
           Serial.println("Show Card Info");
@@ -394,6 +396,30 @@ void addUser() {
   if (! databaseExec(dbAccessControl, sql))
     return;
   
+  setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
+  delay(DELAY_APPLY_FUNC);
+}
+
+void removeUser() {
+  String id, message;
+  const char* sql;
+
+  id = waitingForUser();
+  setSlaveSelect(SPI_SD_SLAVE_PIN, SPI_RFID_SLAVE_PIN);
+
+  if(checkUser(id)) {
+    message = ("User removed");
+    sql = ("DELETE FROM users WHERE cardID = '" + id + "'").c_str();
+    if (! databaseExec(dbAccessControl, sql))
+      return;
+  }
+  else
+    message = ("Unauthorized attempt to remove missing user");
+  
+  sql = ("INSERT INTO logs (cardID, date, action) VALUES ('" + id + "', '" + getTime() + "', '" + message + "')").c_str();
+  if (! databaseExec(dbAccessControl, sql))
+    return;
+
   setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
   delay(DELAY_APPLY_FUNC);
 }
