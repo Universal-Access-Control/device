@@ -162,10 +162,10 @@ bool sqliteInit() {
   if (! databaseOpen(&dbAccessControl, "/sd/Access_Control.db"))
     return false;
 
-  if (! databaseExec(dbAccessControl, createTbUsers))
+  if (! databaseExec(dbAccessControl, createTbUsers, NULL))
     return false;
 
-  if (! databaseExec(dbAccessControl, createTbLogs))
+  if (! databaseExec(dbAccessControl, createTbLogs, NULL))
     return false;
 
   setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
@@ -301,14 +301,9 @@ bool databaseOpen(sqlite3 **db, const char *filename) {
   return true;
 }
 
-static int databaseCallback(void *data, int argc, char **argv, char **azColName) {
-  userExists = true;
-  return 0;
-}
-
-bool databaseExec(sqlite3 *db, const char *sql) {
+bool databaseExec(sqlite3 *db, const char *sql, int (*callback)(void *data, int argc, char **argv, char **azColName)) {
   char *zErrMsg = 0;
-  int rc = sqlite3_exec(db, sql, databaseCallback, NULL, &zErrMsg);
+  int rc = sqlite3_exec(db, sql, callback, NULL, &zErrMsg);
 
   if (rc != SQLITE_OK) {
     sqlite3_free(zErrMsg);
@@ -316,6 +311,11 @@ bool databaseExec(sqlite3 *db, const char *sql) {
     return false;
   }
   return true;
+}
+
+static int callbackUserExist(void *data, int argc, char **argv, char **azColName) {
+  userExists = true;
+  return 0;
 }
 
 // ********************************************
@@ -346,7 +346,7 @@ String waitingForUser() {
 bool checkUser(String id) {
   userExists = false;
   const char* sql = ("SELECT cardID FROM users WHERE cardID = '" + id + "'").c_str();
-  if (! databaseExec(dbAccessControl, sql))
+  if (! databaseExec(dbAccessControl, sql, callbackUserExist))
     return false;
   return userExists;
 }
@@ -369,7 +369,7 @@ void checkAccessTask(void *parameters) {
       message = ("Access denied");
     
     sql = ("INSERT INTO logs (cardID, date, action) VALUES ('" + id + "', '" + getTime() + "', '" + message + "')").c_str();
-    if (! databaseExec(dbAccessControl, sql))
+    if (! databaseExec(dbAccessControl, sql, NULL))
       vTaskSuspend(checkAccessHandle);
 
     setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
@@ -386,14 +386,14 @@ void addUser() {
   if(! checkUser(id)) {
     message = ("User added");
     sql = ("INSERT INTO users (name, cardID, date) VALUES ('Other', '" + id + "', '" + getTime() + "')").c_str();
-    if (! databaseExec(dbAccessControl, sql))
+    if (! databaseExec(dbAccessControl, sql, NULL))
       return;
   }
   else
     message = ("Unauthorized attempts to user re-add");
 
   sql = ("INSERT INTO logs (cardID, date, action) VALUES ('" + id + "', '" + getTime() + "', '" + message + "')").c_str();
-  if (! databaseExec(dbAccessControl, sql))
+  if (! databaseExec(dbAccessControl, sql, NULL))
     return;
   
   setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
@@ -410,14 +410,14 @@ void removeUser() {
   if(checkUser(id)) {
     message = ("User removed");
     sql = ("DELETE FROM users WHERE cardID = '" + id + "'").c_str();
-    if (! databaseExec(dbAccessControl, sql))
+    if (! databaseExec(dbAccessControl, sql, NULL))
       return;
   }
   else
     message = ("Unauthorized attempt to remove missing user");
   
   sql = ("INSERT INTO logs (cardID, date, action) VALUES ('" + id + "', '" + getTime() + "', '" + message + "')").c_str();
-  if (! databaseExec(dbAccessControl, sql))
+  if (! databaseExec(dbAccessControl, sql, NULL))
     return;
 
   setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
