@@ -32,7 +32,7 @@
 #define KEYPAD_BACK_NUM 12
 #define KEYPAD_ADD_USER_NUM 13
 #define KEYPAD_REMOVE_USER_NUM 14
-#define KEYPAD_INFO_CARD_NUM 15
+#define KEYPAD_INFO_USER_NUM 15
 #define KEYPAD_CHANGE_PASSWORD_NUM 16
 #define KEYPAD_INVALID_VALUE -1
 
@@ -74,6 +74,7 @@
 #define DELAY_WAIT_USER 500
 #define DELAY_DISPLAY_MESSAGE 2000
 #define DELAY_OPEN_LOCK 3000
+#define DELAY_DISPLAY_INFO 4000
 
 // ********************************************
 // ****          Global Variables          ****
@@ -229,8 +230,10 @@ void keypadTask(void *parameters)
           removeUser();
           vTaskResume(checkAccessHandle);
           break;
-        case KEYPAD_INFO_CARD_NUM:
-          Serial.println("Show Card Info");
+        case KEYPAD_INFO_USER_NUM:
+          vTaskSuspend(checkAccessHandle);
+          infoUser();
+          vTaskResume(checkAccessHandle);
           break;
         case KEYPAD_CHANGE_PASSWORD_NUM:
           Serial.println("Change Password");
@@ -315,6 +318,26 @@ bool databaseExec(sqlite3 *db, const char *sql, int (*callback)(void *data, int 
 
 static int callbackUserExist(void *data, int argc, char **argv, char **azColName) {
   userExists = true;
+  return 0;
+}
+
+static int callbackInfoUser(void *data, int argc, char **argv, char **azColName) {
+  lcd.clear();
+
+  lcd.setCursor(0, 0);
+  lcd.printf("Name   : %s", argv[0]);
+
+  lcd.setCursor(0, 1);
+  lcd.printf("Card ID: %s", argv[1]);
+
+  lcd.setCursor(0, 2);
+  lcd.printf("Adding : %s", ((String)argv[2]).substring(15,23));    // print time
+
+  lcd.setCursor(0, 3);
+  lcd.printf("      %s%s", ((String)argv[2]).substring(0, 10), ((String)argv[2]).substring(10, 13));    // print date
+
+  delay(DELAY_DISPLAY_INFO);
+  lcd.clear();
   return 0;
 }
 
@@ -424,6 +447,29 @@ void removeUser() {
   delay(DELAY_APPLY_FUNC);
 }
 
+void infoUser() {
+  String id, message;
+  const char* sql; 
+
+  id = waitingForUser();
+  setSlaveSelect(SPI_SD_SLAVE_PIN, SPI_RFID_SLAVE_PIN);
+
+  if(checkUser(id)) {
+    message = ("Display user information");
+    sql = ("SELECT name, cardID, date FROM users WHERE cardID = '" + id + "'").c_str();
+    if (! databaseExec(dbAccessControl, sql, callbackInfoUser))
+      return;
+  }
+  else
+    message = ("Invalid user to display user information");
+  
+  sql = ("INSERT INTO logs (cardID, date, action) VALUES ('" + id + "', '" + getTime() + "', '" + message + "')").c_str();
+  if (! databaseExec(dbAccessControl, sql, NULL))
+    return;
+
+  setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
+}
+
 // ********************************************
 // ****          Other Functions           ****
 // ********************************************
@@ -433,6 +479,6 @@ String getTime() {
   if(!getLocalTime(& timeInfo))
     return "Failed to obtain time";
   
-  strftime(myDatetimeString, sizeof(myDatetimeString), "%B %d %Y, %A, %H:%M:%S %Z", &timeInfo);
+  strftime(myDatetimeString, sizeof(myDatetimeString), "%B %d %Y, %H:%M:%S %Z, %A", &timeInfo);
   return myDatetimeString;
 }
