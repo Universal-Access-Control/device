@@ -70,6 +70,11 @@
 // RELAY
 #define RELAY_PIN 12
 
+// CONFIGURE
+#define CONFIGURE_PRIMITIVE_PASSWORD "11111111"
+#define CONFIGURE_TIME_ZONE WIFI_DayLightOffset_Sec == 0 ? "IRST" : "IRDT"    // Iran Standard Time (IRST), Iran Daylight Time (IRDT)
+#define CONFIGURE_LANGUAGE "EN"
+
 // DELAY
 #define DELAY_WAIT_USER 500
 #define DELAY_DISPLAY_MESSAGE 2000
@@ -93,6 +98,9 @@ TaskHandle_t checkAccessHandle = NULL;
 // SQLite
 sqlite3 *dbAccessControl;
 bool userExists;
+
+// CONFIGURE
+String password;
 
 // ********************************************
 // ****                Setup               ****
@@ -128,6 +136,10 @@ void setup()
   wifiInit();
   configTime(WIFI_GmtOffset_Sec, WIFI_DayLightOffset_Sec, WIFI_NTPServer);
 
+  // CONFIGURE
+  if (! configInit())
+    return;
+
   // TASKS
   xTaskCreatePinnedToCore(keypadTask, "Keypad Task", 4096, NULL, 2, &keypadHandle, ARDUINO_RUNNING_CORE);
   xTaskCreatePinnedToCore(checkAccessTask, "Check Access Task", 8192, NULL, 1, &checkAccessHandle, ARDUINO_RUNNING_CORE);
@@ -158,6 +170,7 @@ bool sqliteInit() {
 
   const char* createTbUsers = "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY NOT NULL, name VARCHAR(100) NULL, cardID VARCHAR(100) NOT NULL, date VARCHAR(100) NOT NULL)";
   const char* createTbLogs = "CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY NOT NULL, cardID VARCHAR(100) NOT NULL, date VARCHAR(100) NOT NULL, action VARCHAR(100) NOT NULL)";
+  const char* createTbConfig = "CREATE TABLE IF NOT EXISTS config (id INTEGER PRIMARY KEY NOT NULL, wifiName VARCHAR(100) NOT NULL, password VARCHAR(20) NOT NULL, timezone VARCHAR(10) NOT NULL, language VARCHAR(5) NOT NULL)";
 
   sqlite3_initialize();
   if (! databaseOpen(&dbAccessControl, "/sd/Access_Control.db"))
@@ -169,6 +182,9 @@ bool sqliteInit() {
   if (! databaseExec(dbAccessControl, createTbLogs, NULL))
     return false;
 
+  if (! databaseExec(dbAccessControl, createTbConfig, NULL))
+     return false;
+
   setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
   return true;
 }
@@ -177,6 +193,25 @@ void wifiInit() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   while (WiFi.status() != WL_CONNECTED)
     delay(500);
+}
+
+bool configInit() {
+  const char* sql;
+  setSlaveSelect(SPI_SD_SLAVE_PIN, SPI_RFID_SLAVE_PIN);
+
+  sql = "SELECT password FROM config WHERE id = 1";
+  if (! databaseExec(dbAccessControl, sql, callbackSetPassword))
+    return false;
+
+  if (password == NULL) {
+    password = CONFIGURE_PRIMITIVE_PASSWORD;
+    sql = ("INSERT INTO config (wifiName, password, timezone, language) VALUES ('" + String(WIFI_SSID) +  "', '" +  String(CONFIGURE_PRIMITIVE_PASSWORD) + "', '" + String(CONFIGURE_TIME_ZONE) + "', '" + String(CONFIGURE_LANGUAGE) + "')").c_str ();
+    if (! databaseExec(dbAccessControl, sql, NULL))
+      return false;
+  }
+
+  setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
+  return true;
 }
 
 // ********************************************
@@ -338,6 +373,11 @@ static int callbackInfoUser(void *data, int argc, char **argv, char **azColName)
 
   delay(DELAY_DISPLAY_INFO);
   lcd.clear();
+  return 0;
+}
+
+static int callbackSetPassword(void *data, int argc, char **argv, char **azColName) {
+  password = argv[0];
   return 0;
 }
 
