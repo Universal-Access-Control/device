@@ -2,7 +2,6 @@
 // ****           Include Libraries        ****
 // ********************************************
 #include <LiquidCrystal.h>
-#include <Password.h>
 #include <SPI.h>
 #include <MFRC522.h>
 #include <SD.h>
@@ -285,7 +284,7 @@ int checkPassword()
 {
   lcd.clear();
   lcd.print("Password: ");
-  Password password = Password("12345677");
+  String inputPassword;
 
   int8_t i = 0;
   int8_t number = KEYPAD_INVALID_VALUE;
@@ -300,7 +299,7 @@ int checkPassword()
 
     if (number >= 0 && number <= 9)
     {
-      password.append(number + 48);
+      inputPassword += number;
       lcd.print(number);
       i++;
     }
@@ -310,7 +309,7 @@ int checkPassword()
   if (number == KEYPAD_BACK_NUM)
     return ACTION_BACK;
   else
-    return password.evaluate() ? ACTION_ALLOW_ACCESS : ACTION_WRONG_PASS;
+    return password == inputPassword ? ACTION_ALLOW_ACCESS : ACTION_WRONG_PASS;
 }
 
 bool checkAuth(int8_t selectedNumber)
