@@ -52,6 +52,7 @@
 
 // PASSWORD
 #define PASSWORD_MAX_LENGTH 8
+#define PASSWORD_MIN_LENGTH 5
 
 // SPI
 // SCLK = 18, MISO = 19, MOSI = 23
@@ -270,7 +271,7 @@ void keypadTask(void *parameters)
           vTaskResume(checkAccessHandle);
           break;
         case KEYPAD_CHANGE_PASSWORD_NUM:
-          Serial.println("Change Password");
+          changePassword();
           break;
       }
     }
@@ -280,16 +281,17 @@ void keypadTask(void *parameters)
 // ********************************************
 // ****           Auth Functions           ****
 // ********************************************
-int checkPassword()
-{
+String getPassword(String message) {
   lcd.clear();
-  lcd.print("Password: ");
+  lcd.print(message);
   String inputPassword;
 
   int8_t i = 0;
   int8_t number = KEYPAD_INVALID_VALUE;
-  while (i < PASSWORD_MAX_LENGTH)
-  {
+  lcd.setCursor(LCD_COLUMNS - 1, 0);
+  lcd.rightToLeft();
+
+  while (i < PASSWORD_MAX_LENGTH) {
     enableKeypadInterrupt();
     vTaskSuspend(keypadHandle);
     number = key;
@@ -297,16 +299,74 @@ int checkPassword()
     if (number == KEYPAD_BACK_NUM || number == KEYPAD_CONFIRM_NUM)
       break;
 
-    if (number >= 0 && number <= 9)
-    {
+    if (number >= 0 && number <= 9) {
       inputPassword += number;
-      lcd.print(number);
+      lcd.print("*");
       i++;
     }
   }
-  
+
   lcd.clear();
+  lcd.leftToRight();
   if (number == KEYPAD_BACK_NUM)
+    inputPassword.clear();
+  else if (inputPassword.length() == 0)
+    inputPassword = " ";
+    
+  return inputPassword;
+}
+
+void changePassword() {
+  String newPassword = getPassword("New Pass: ");
+
+  if (newPassword != NULL) {     // number != KEYPAD_BACK_NUM
+    if (newPassword.length() < PASSWORD_MIN_LENGTH) {
+      lcd.print("The password needs ");
+      lcd.setCursor(0, 1);
+      lcd.printf("to have %d-%d numbers", PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH);
+      delay(DELAY_APPLY_FUNC);
+    }
+
+    else if (password == newPassword) {
+      lcd.print("The new password ");
+      lcd.setCursor(0, 1);
+      lcd.printf("must be different");
+      delay(DELAY_APPLY_FUNC);
+    }
+
+    else {
+      String confirmPassword = getPassword("Conf Pass: ");
+      if (confirmPassword != NULL) {     // number == KEYPAD_BACK_NUM
+        if (newPassword != confirmPassword) {
+          lcd.print("The password not");
+          lcd.setCursor(0, 1);
+          lcd.printf("match");
+          delay(DELAY_APPLY_FUNC);
+        }
+
+        else {
+          const char* sql = ("UPDATE config SET password = '" + newPassword + "' WHERE id = 1;").c_str();
+          if (! databaseExec(dbAccessControl, sql, NULL))
+            return;
+
+          sql = "SELECT password FROM config WHERE id = 1";
+          if (! databaseExec(dbAccessControl, sql, callbackSetPassword))
+            return;
+
+          lcd.printf("Successfully");
+          delay(DELAY_APPLY_FUNC);
+        } // newPassword == confirmPassword
+      } // confirmPassword != NULL
+    } // newPassword.length() >= PASSWORD_MIN_LENGTH
+  } // newPassword != NULL
+
+  lcd.clear();
+}
+
+int checkPassword() {
+  String inputPassword = getPassword("Password: ");
+
+  if (inputPassword == NULL)      // number == KEYPAD_BACK_NUM
     return ACTION_BACK;
   else
     return password == inputPassword ? ACTION_ALLOW_ACCESS : ACTION_WRONG_PASS;
