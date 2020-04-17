@@ -78,7 +78,6 @@
 // DELAY
 #define DELAY_WAIT_USER 500
 #define DELAY_DISPLAY_MESSAGE 2000
-#define DELAY_OPEN_LOCK 3000
 #define DELAY_DISPLAY_INFO 4000
 
 // ********************************************
@@ -321,40 +320,31 @@ void changePassword() {
 
   if (newPassword != NULL) {     // number != KEYPAD_BACK_NUM
     if (newPassword.length() < PASSWORD_MIN_LENGTH) {
-      lcd.print("The password needs ");
-      lcd.setCursor(0, 1);
-      lcd.printf("to have %d-%d numbers", PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH);
-      delay(DELAY_APPLY_FUNC);
+      char tmp[32];
+
+      sprintf(tmp, "to have %d-%d numbers", PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH);
+      printMessage("The password needs ", tmp);
     }
 
     else if (password == newPassword) {
-      lcd.print("The new password ");
-      lcd.setCursor(0, 1);
-      lcd.printf("must be different");
-      delay(DELAY_APPLY_FUNC);
-    }
-
+      printMessage("The new password ", "must be different");
+    } 
     else {
       String confirmPassword = getPassword("Conf Pass: ");
-      if (confirmPassword != NULL) {     // number == KEYPAD_BACK_NUM
+      if (confirmPassword != NULL) {    // number != KEYPAD_BACK_NUM
         if (newPassword != confirmPassword) {
-          lcd.print("The password not");
-          lcd.setCursor(0, 1);
-          lcd.printf("match");
-          delay(DELAY_APPLY_FUNC);
-        }
-
+          printMessage("The password not", "match");
+        } 
         else {
           const char* sql = ("UPDATE config SET password = '" + newPassword + "' WHERE id = 1;").c_str();
-          if (! databaseExec(dbAccessControl, sql, NULL))
+          if (! databaseExec(dbAccessControl, sql, NULL)) {
             return;
-
+          }
           sql = "SELECT password FROM config WHERE id = 1";
-          if (! databaseExec(dbAccessControl, sql, callbackSetPassword))
+          if (! databaseExec(dbAccessControl, sql, callbackSetPassword)) {
             return;
-
-          lcd.printf("Successfully");
-          delay(DELAY_APPLY_FUNC);
+          }
+          printMessage("Successfully", "");
         } // newPassword == confirmPassword
       } // confirmPassword != NULL
     } // newPassword.length() >= PASSWORD_MIN_LENGTH
@@ -430,6 +420,7 @@ static int callbackInfoUser(void *data, int argc, char **argv, char **azColName)
   lcd.setCursor(0, 3);
   lcd.printf("      %s%s", ((String)argv[2]).substring(0, 10), ((String)argv[2]).substring(10, 13));    // print date
 
+  userExists = true;
   delay(DELAY_DISPLAY_INFO);
   lcd.clear();
   return 0;
@@ -484,11 +475,13 @@ void checkAccessTask(void *parameters) {
     if(checkUser(id)) {
       message = ("Access verified");
       digitalWrite(RELAY_PIN, LOW);
-      delay(DELAY_OPEN_LOCK);
+      printMessage(message, "");
       digitalWrite(RELAY_PIN, HIGH);
     }
-    else
+    else {
       message = ("Access denied");
+      printMessage(message, "");
+    }
     
     sql = ("INSERT INTO logs (cardID, date, action) VALUES ('" + id + "', '" + getTime() + "', '" + message + "')").c_str();
     if (! databaseExec(dbAccessControl, sql, NULL))
@@ -499,7 +492,7 @@ void checkAccessTask(void *parameters) {
 }
 
 void addUser() {
-  String id, message;
+  String id, message, lcdMessage;
   const char* sql;
 
   id = waitingForUser();
@@ -507,23 +500,26 @@ void addUser() {
 
   if(! checkUser(id)) {
     message = ("User added");
+    lcdMessage = message;
     sql = ("INSERT INTO users (name, cardID, date) VALUES ('Other', '" + id + "', '" + getTime() + "')").c_str();
     if (! databaseExec(dbAccessControl, sql, NULL))
       return;
   }
-  else
+  else {
     message = ("Unauthorized attempts to user re-add");
-
+    lcdMessage = ("User is there");
+  }
+  
   sql = ("INSERT INTO logs (cardID, date, action) VALUES ('" + id + "', '" + getTime() + "', '" + message + "')").c_str();
   if (! databaseExec(dbAccessControl, sql, NULL))
     return;
   
   setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
-  delay(DELAY_APPLY_FUNC);
+  printMessage(lcdMessage, "");
 }
 
 void removeUser() {
-  String id, message;
+  String id, message, lcdMessage;
   const char* sql;
 
   id = waitingForUser();
@@ -531,19 +527,22 @@ void removeUser() {
 
   if(checkUser(id)) {
     message = ("User removed");
+    lcdMessage = message;
     sql = ("DELETE FROM users WHERE cardID = '" + id + "'").c_str();
     if (! databaseExec(dbAccessControl, sql, NULL))
       return;
   }
-  else
+  else {
     message = ("Unauthorized attempt to remove missing user");
-  
+    lcdMessage = ("User does not exist");
+  }
+
   sql = ("INSERT INTO logs (cardID, date, action) VALUES ('" + id + "', '" + getTime() + "', '" + message + "')").c_str();
   if (! databaseExec(dbAccessControl, sql, NULL))
     return;
 
   setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
-  delay(DELAY_APPLY_FUNC);
+  printMessage(lcdMessage, "");
 }
 
 void infoUser() {
@@ -551,6 +550,7 @@ void infoUser() {
   const char* sql; 
 
   id = waitingForUser();
+  userExists = false;
   setSlaveSelect(SPI_SD_SLAVE_PIN, SPI_RFID_SLAVE_PIN);
 
   if(checkUser(id)) {
@@ -567,6 +567,8 @@ void infoUser() {
     return;
 
   setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
+  if (! userExists)
+    printMessage(("Invalid user"), "");
 }
 
 // ********************************************
@@ -580,4 +582,12 @@ String getTime() {
   
   strftime(myDatetimeString, sizeof(myDatetimeString), "%B %d %Y, %H:%M:%S %Z, %A", &timeInfo);
   return myDatetimeString;
+}
+
+void printMessage(String messageOne, String messageTwo) {
+  lcd.print(messageOne);
+  lcd.setCursor(0, 1);
+  lcd.print(messageTwo);
+  delay(DELAY_APPLY_FUNC);
+  lcd.clear();
 }
