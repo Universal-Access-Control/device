@@ -1,7 +1,7 @@
 // ********************************************
 // ****           Include Libraries        ****
 // ********************************************
-#include <LiquidCrystal.h>
+#include <LiquidCrystal_I2C.h>
 #include <SPI.h>
 #include <MFRC522.h>
 #include <SD.h>
@@ -23,8 +23,8 @@
 #define SERIAL_BAUD_RATE 9600
 
 // KEYPAD
-#define KEYPAD_SCL_PIN 22
-#define KEYPAD_SDO_PIN 21
+#define KEYPAD_SCL_PIN 27
+#define KEYPAD_SDO_PIN 14
 #define KEYPAD_NUM_OF_KEYS 16
 #define KEYPAD_ZERO_NUMBER_KEY 10
 #define KEYPAD_CONFIRM_NUM 11
@@ -38,12 +38,7 @@
 // CHARACTER LCD
 #define LCD_ROWS 4
 #define LCD_COLUMNS 20
-#define LCD_RS_PIN 26
-#define LCD_EN_PIN 25
-#define LCD_D4_PIN 17
-#define LCD_D5_PIN 16
-#define LCD_D6_PIN 27
-#define LCD_D7_PIN 14
+#define LCD_I2C_ADDRESS 0X27
 
 // ACTIONS
 #define ACTION_BACK -1
@@ -84,7 +79,7 @@
 // ****          Global Variables          ****
 // ********************************************
 // CHARACTER LCD
-LiquidCrystal lcd(LCD_RS_PIN, LCD_EN_PIN, LCD_D4_PIN, LCD_D5_PIN, LCD_D6_PIN, LCD_D7_PIN);
+LiquidCrystal_I2C lcd(LCD_I2C_ADDRESS, LCD_COLUMNS, LCD_ROWS);
 
 // KEYPAD
 int8_t key = KEYPAD_INVALID_VALUE;
@@ -110,7 +105,7 @@ void setup()
   Serial.begin(SERIAL_BAUD_RATE);
 
   // CHARACTER LCD
-  lcd.begin(LCD_COLUMNS, LCD_ROWS);
+  lcd.begin();
 
   // KEYPAD
   pinMode(KEYPAD_SCL_PIN, OUTPUT);
