@@ -30,7 +30,7 @@
 #define KEYPAD_ZERO_NUMBER_KEY 10
 #define KEYPAD_CONFIRM_NUM 11
 #define KEYPAD_BACK_NUM 12
-#define KEYPAD_ADD_CARD_NUM 13
+#define KEYPAD_ADD_USER_NUM 13
 #define KEYPAD_REMOVE_CARD_NUM 14
 #define KEYPAD_INFO_CARD_NUM 15
 #define KEYPAD_CHANGE_PASSWORD_NUM 16
@@ -71,6 +71,8 @@
 #define RELAY_PIN 12
 
 // DELAY
+#define DELAY_WAIT_USER 500
+#define DELAY_DISPLAY_MESSAGE 2000
 #define DELAY_OPEN_LOCK 3000
 
 // ********************************************
@@ -217,8 +219,10 @@ void keypadTask(void *parameters)
     {
       switch (number)
       {
-        case KEYPAD_ADD_CARD_NUM:
-          Serial.println("Add Card");
+        case KEYPAD_ADD_USER_NUM:
+          vTaskSuspend(checkAccessHandle);
+          addUser();
+          vTaskResume(checkAccessHandle);
           break;
         case KEYPAD_REMOVE_CARD_NUM:
           Serial.println("Remove Card");
@@ -323,6 +327,7 @@ void setSlaveSelect(int enablePin, int disablePin) {
 String waitingForUser() {
   String content;
   do {
+    delay(DELAY_WAIT_USER);
     // Look for new cards
     if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
       for (byte i = 0; i < mfrc522.uid.size; i++) {
@@ -367,6 +372,30 @@ void checkAccessTask(void *parameters) {
 
     setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
   }
+}
+
+void addUser() {
+  String id, message;
+  const char* sql;
+
+  id = waitingForUser();
+  setSlaveSelect(SPI_SD_SLAVE_PIN, SPI_RFID_SLAVE_PIN);
+
+  if(! checkUser(id)) {
+    message = ("User added");
+    sql = ("INSERT INTO users (name, cardID, date) VALUES ('Other', '" + id + "', '" + getTime() + "')").c_str();
+    if (! databaseExec(dbAccessControl, sql))
+      return;
+  }
+  else
+    message = ("Unauthorized attempts to user re-add");
+
+  sql = ("INSERT INTO logs (cardID, date, action) VALUES ('" + id + "', '" + getTime() + "', '" + message + "')").c_str();
+  if (! databaseExec(dbAccessControl, sql))
+    return;
+  
+  setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
+  delay(DELAY_APPLY_FUNC);
 }
 
 // ********************************************
