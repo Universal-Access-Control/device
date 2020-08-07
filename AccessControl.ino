@@ -67,6 +67,12 @@
 #define WIFI_GmtOffset_Sec 12600               // Tehran +3:30h ::>> +12600s
 #define WIFI_DayLightOffset_Sec 3600           // If Daylight Saving Time (DST) is off, WIFI_DayLightOffset_Sec = 0
 
+// RELAY
+#define RELAY_PIN 12
+
+// DELAY
+#define DELAY_OPEN_LOCK 3000
+
 // ********************************************
 // ****          Global Variables          ****
 // ********************************************
@@ -83,6 +89,7 @@ TaskHandle_t checkAccessHandle = NULL;
 
 // SQLite
 sqlite3 *dbAccessControl;
+bool userExists;
 
 // ********************************************
 // ****                Setup               ****
@@ -289,6 +296,7 @@ bool databaseOpen(sqlite3 **db, const char *filename) {
 }
 
 static int databaseCallback(void *data, int argc, char **argv, char **azColName) {
+  userExists = true;
   return 0;
 }
 
@@ -328,10 +336,36 @@ String waitingForUser() {
   return content.substring(1);
 }
 
+bool checkUser(String id) {
+  userExists = false;
+  const char* sql = ("SELECT cardID FROM users WHERE cardID = '" + id + "'").c_str();
+  if (! databaseExec(dbAccessControl, sql))
+    return false;
+  return userExists;
+}
+
 void checkAccessTask(void *parameters) {
   while (true) {
-    String id = waitingForUser();
-    Serial.println("Authorized access");
+    String id, message;
+    const char* sql;
+
+    id = waitingForUser();
+    setSlaveSelect(SPI_SD_SLAVE_PIN, SPI_RFID_SLAVE_PIN);
+    
+    if(checkUser(id)) {
+      message = ("Access verified");
+      digitalWrite(RELAY_PIN, LOW);
+      delay(DELAY_OPEN_LOCK);
+      digitalWrite(RELAY_PIN, HIGH);
+    }
+    else
+      message = ("Access denied");
+    
+    sql = ("INSERT INTO logs (cardID, date, action) VALUES ('" + id + "', '" + getTime() + "', '" + message + "')").c_str();
+    if (! databaseExec(dbAccessControl, sql))
+      vTaskSuspend(checkAccessHandle);
+
+    setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
   }
 }
 
