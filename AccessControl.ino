@@ -2,6 +2,7 @@
 // ****           Include Libraries        ****
 // ********************************************
 #include <LiquidCrystal_I2C.h>
+#include <Adafruit_Fingerprint.h>
 #include <SPI.h>
 #include <MFRC522.h>
 #include <SD.h>
@@ -21,6 +22,8 @@
 
 // SERIAL
 #define SERIAL_BAUD_RATE 9600
+#define SERIAL2_BAUD_RATE 115200
+#define SERIAL_FINGER_SENSOR 57600
 
 // KEYPAD
 #define KEYPAD_SCL_PIN 27
@@ -70,6 +73,9 @@
 #define CONFIGURE_TIME_ZONE WIFI_DayLightOffset_Sec == 0 ? "IRST" : "IRDT"    // Iran Standard Time (IRST), Iran Daylight Time (IRDT)
 #define CONFIGURE_LANGUAGE "EN"
 
+// FINGER PRINT
+#define FINGER_INVALID "0"
+
 // DELAY
 #define DELAY_WAIT_USER 500
 #define DELAY_DISPLAY_MESSAGE 2000
@@ -92,9 +98,13 @@ TaskHandle_t checkAccessHandle = NULL;
 // SQLite
 sqlite3 *dbAccessControl;
 bool userExists;
+String userIDCard;
 
 // CONFIGURE
 String password;
+
+// FINGER PRINT
+Adafruit_Fingerprint finger = Adafruit_Fingerprint(&Serial2);
 
 // ********************************************
 // ****                Setup               ****
@@ -103,7 +113,8 @@ void setup()
 {
   // SERIAL
   Serial.begin(SERIAL_BAUD_RATE);
-
+  Serial2.begin(SERIAL2_BAUD_RATE);
+  
   // CHARACTER LCD
   lcd.begin();
 
@@ -134,6 +145,11 @@ void setup()
   if (! configInit())
     return;
 
+  // FINGER PRINT
+  finger.begin(SERIAL_FINGER_SENSOR);          // Set the data rate for the sensor serial port
+  if (! fingerInit())
+    return;
+
   // TASKS
   xTaskCreatePinnedToCore(keypadTask, "Keypad Task", 4096, NULL, 2, &keypadHandle, ARDUINO_RUNNING_CORE);
   xTaskCreatePinnedToCore(checkAccessTask, "Check Access Task", 8192, NULL, 1, &checkAccessHandle, ARDUINO_RUNNING_CORE);
@@ -162,7 +178,7 @@ bool storageInit() {
 bool sqliteInit() {
   setSlaveSelect(SPI_SD_SLAVE_PIN, SPI_RFID_SLAVE_PIN);
 
-  const char* createTbUsers = "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY NOT NULL, name VARCHAR(100) NULL, cardID VARCHAR(100) NOT NULL, date VARCHAR(100) NOT NULL)";
+  const char* createTbUsers = "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY NOT NULL, name VARCHAR(100) NULL, cardID VARCHAR(100) NOT NULL, fingerID VARCHAR(100) NULL, date VARCHAR(100) NOT NULL)";
   const char* createTbLogs = "CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY NOT NULL, cardID VARCHAR(100) NOT NULL, date VARCHAR(100) NOT NULL, action VARCHAR(100) NOT NULL)";
   const char* createTbConfig = "CREATE TABLE IF NOT EXISTS config (id INTEGER PRIMARY KEY NOT NULL, wifiName VARCHAR(100) NOT NULL, password VARCHAR(20) NOT NULL, timezone VARCHAR(10) NOT NULL, language VARCHAR(5) NOT NULL)";
 
@@ -206,6 +222,13 @@ bool configInit() {
 
   setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
   return true;
+}
+
+bool fingerInit() {
+  if (finger.verifyPassword())
+    return true;
+    
+  return false;
 }
 
 // ********************************************
@@ -396,6 +419,7 @@ bool databaseExec(sqlite3 *db, const char *sql, int (*callback)(void *data, int 
 }
 
 static int callbackUserExist(void *data, int argc, char **argv, char **azColName) {
+  userIDCard = argv[0];
   userExists = true;
   return 0;
 }
@@ -436,7 +460,8 @@ void setSlaveSelect(int enablePin, int disablePin) {
 
 String waitingForUser() {
   String content;
-  do {
+
+  while (true) {
     delay(DELAY_WAIT_USER);
     // Look for new cards
     if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
@@ -445,17 +470,32 @@ String waitingForUser() {
         content.concat(String(mfrc522.uid.uidByte[i], HEX));     // Saves the ID as hexadecimal, not decimal
       }
       content.toUpperCase();
+      return content.substring(1);
     }
-  }while (content == NULL);
-
-  return content.substring(1);
+    // Look for new fingers
+    if (finger.getImage() == FINGERPRINT_OK)
+      if (finger.image2Tz() == FINGERPRINT_OK) {
+        if (finger.fingerFastSearch() == FINGERPRINT_OK)
+          return String(finger.fingerID);
+        else
+          return FINGER_INVALID;
+      }
+  }
 }
 
 bool checkUser(String id) {
   userExists = false;
-  const char* sql = ("SELECT cardID FROM users WHERE cardID = '" + id + "'").c_str();
-  if (! databaseExec(dbAccessControl, sql, callbackUserExist))
-    return false;
+  const char* sql;
+
+  if (id != FINGER_INVALID) {
+    if (id.length() == 11)    // If the ID type is cardID
+      sql = ("SELECT cardID FROM users WHERE cardID = '" + id + "'").c_str();
+    else
+      sql = ("SELECT cardID FROM users WHERE fingerID = '" + id + "'").c_str();
+
+    if (! databaseExec(dbAccessControl, sql, callbackUserExist))
+      return false;
+  }
   return userExists;
 }
 
@@ -467,8 +507,9 @@ void checkAccessTask(void *parameters) {
     id = waitingForUser();
     setSlaveSelect(SPI_SD_SLAVE_PIN, SPI_RFID_SLAVE_PIN);
     
-    if(checkUser(id)) {
+    if (checkUser(id)) {
       message = ("Access verified");
+      id = userIDCard;    // If the ID type is fingerID, set the valid ID (cardID) to id
       digitalWrite(RELAY_PIN, LOW);
       printMessage(message, "");
       digitalWrite(RELAY_PIN, HIGH);
