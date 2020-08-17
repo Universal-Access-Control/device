@@ -114,7 +114,7 @@ void setup()
   // SERIAL
   Serial.begin(SERIAL_BAUD_RATE);
   Serial2.begin(SERIAL2_BAUD_RATE);
-  
+
   // CHARACTER LCD
   lcd.begin();
 
@@ -167,7 +167,7 @@ void loop()
 // ********************************************
 bool storageInit() {
   setSlaveSelect(SPI_SD_SLAVE_PIN, SPI_RFID_SLAVE_PIN);
-  
+
   if (!SD.begin(SPI_SD_SLAVE_PIN))
     return false;
 
@@ -227,7 +227,7 @@ bool configInit() {
 bool fingerInit() {
   if (finger.verifyPassword())
     return true;
-    
+
   return false;
 }
 
@@ -329,7 +329,7 @@ String getPassword(String message) {
     inputPassword.clear();
   else if (inputPassword.length() == 0)
     inputPassword = " ";
-    
+
   return inputPassword;
 }
 
@@ -346,13 +346,13 @@ void changePassword() {
 
     else if (password == newPassword) {
       printMessage("The new password ", "must be different");
-    } 
+    }
     else {
       String confirmPassword = getPassword("Conf Pass: ");
       if (confirmPassword != NULL) {    // number != KEYPAD_BACK_NUM
         if (newPassword != confirmPassword) {
           printMessage("The password not", "match");
-        } 
+        }
         else {
           const char* sql = ("UPDATE config SET password = '" + newPassword + "' WHERE id = 1;").c_str();
           if (! databaseExec(dbAccessControl, sql, NULL)) {
@@ -448,7 +448,7 @@ static int callbackInfoUser(void *data, int argc, char **argv, char **azColName)
 static int callbackFingerAddUser(void *data, int argc, char **argv, char **azColName) {
   int id = atoi(argv[0]);
   const char* sql;
-  
+
   while (true) {
     while(! takeFingerImage("Waiting for finger", 1));
     while(! takeFingerImage("Place same finger", 2));
@@ -524,7 +524,7 @@ bool checkUser(String id) {
       sql = ("SELECT cardID FROM users WHERE cardID = '" + id + "'").c_str();
     else
       sql = ("SELECT cardID FROM users WHERE fingerID = '" + id + "'").c_str();
-  
+
     if (! databaseExec(dbAccessControl, sql, callbackUserExist))
       return false;
   }
@@ -550,7 +550,7 @@ void checkAccessTask(void *parameters) {
       message = ("Access denied");
       printMessage(message, "");
     }
-    
+
     sql = ("INSERT INTO logs (cardID, date, action) VALUES ('" + id + "', '" + getTime() + "', '" + message + "')").c_str();
     if (! databaseExec(dbAccessControl, sql, NULL))
       vTaskSuspend(checkAccessHandle);
@@ -583,11 +583,11 @@ void addUser() {
     message = ("Unauthorized attempts to user re-add");
     lcdMessage = ("User is there");
   }
-  
+
   sql = ("INSERT INTO logs (cardID, date, action) VALUES ('" + id + "', '" + getTime() + "', '" + message + "')").c_str();
   if (! databaseExec(dbAccessControl, sql, NULL))
     return;
-  
+
   setSlaveSelect(SPI_RFID_SLAVE_PIN, SPI_SD_SLAVE_PIN);
   printMessage(lcdMessage, "");
 }
@@ -630,7 +630,7 @@ void removeUser() {
 
 void infoUser() {
   String id, message;
-  const char* sql; 
+  const char* sql;
 
   id = waitingForUser();
   userExists = false;
@@ -645,7 +645,7 @@ void infoUser() {
   }
   else
     message = ("Invalid user to display user information");
-  
+
   sql = ("INSERT INTO logs (cardID, date, action) VALUES ('" + id + "', '" + getTime() + "', '" + message + "')").c_str();
   if (! databaseExec(dbAccessControl, sql, NULL))
     return;
@@ -663,7 +663,7 @@ String getTime() {
   char myDatetimeString[50];
   if(!getLocalTime(& timeInfo))
     return "Failed to obtain time";
-  
+
   strftime(myDatetimeString, sizeof(myDatetimeString), "%B %d %Y, %H:%M:%S %Z, %A", &timeInfo);
   return myDatetimeString;
 }
@@ -700,7 +700,7 @@ bool takeFingerImage(String message, int valueConvertImage) {
   lcd.print("Image taken");
   delay(DELAY_DISPLAY_MESSAGE);
   lcd.clear();
-  lcd.print("Pick up finger");  
+  lcd.print("Pick up finger");
 
   while (finger.getImage() != FINGERPRINT_NOFINGER);
 
