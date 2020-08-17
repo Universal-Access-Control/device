@@ -445,6 +445,33 @@ static int callbackInfoUser(void *data, int argc, char **argv, char **azColName)
   return 0;
 }
 
+static int callbackFingerAddUser(void *data, int argc, char **argv, char **azColName) {
+  int id = atoi(argv[0]);
+  const char* sql;
+  
+  while (true) {
+    while(! takeFingerImage("Waiting for finger", 1));
+    while(! takeFingerImage("Place same finger", 2));
+
+    if (finger.createModel() == FINGERPRINT_OK) {
+      if (finger.storeModel(id) == FINGERPRINT_OK) {
+        sql = ("UPDATE users SET fingerID = '" + String(id) + "' WHERE id = '" + String(id) + "';").c_str();
+        if (! databaseExec(dbAccessControl, sql, NULL))
+          return 0;
+        return 0;
+      }
+      else {
+        lcd.print("Try again");
+        delay(DELAY_DISPLAY_MESSAGE);
+      }
+    }
+    else {
+      lcd.print("Fingers not match");
+      delay(DELAY_DISPLAY_MESSAGE);
+    }
+  }
+}
+
 static int callbackSetPassword(void *data, int argc, char **argv, char **azColName) {
   password = argv[0];
   return 0;
@@ -492,7 +519,7 @@ bool checkUser(String id) {
       sql = ("SELECT cardID FROM users WHERE cardID = '" + id + "'").c_str();
     else
       sql = ("SELECT cardID FROM users WHERE fingerID = '" + id + "'").c_str();
-
+  
     if (! databaseExec(dbAccessControl, sql, callbackUserExist))
       return false;
   }
@@ -531,14 +558,20 @@ void addUser() {
   String id, message, lcdMessage;
   const char* sql;
 
+  lcd.print("Waiting for card");
   id = waitingForUser();
   setSlaveSelect(SPI_SD_SLAVE_PIN, SPI_RFID_SLAVE_PIN);
 
-  if(! checkUser(id)) {
+  lcd.clear();
+  if (! checkUser(id)) {
     message = ("User added");
     lcdMessage = message;
     sql = ("INSERT INTO users (name, cardID, date) VALUES ('Other', '" + id + "', '" + getTime() + "')").c_str();
     if (! databaseExec(dbAccessControl, sql, NULL))
+      return;
+
+    sql = ("SELECT id FROM users WHERE cardID = '" + id + "'").c_str();
+    if (! databaseExec(dbAccessControl, sql, callbackFingerAddUser))
       return;
   }
   else {
@@ -624,6 +657,38 @@ void printMessage(String messageOne, String messageTwo) {
   lcd.print(messageOne);
   lcd.setCursor(0, 1);
   lcd.print(messageTwo);
-  delay(DELAY_APPLY_FUNC);
+  delay(DELAY_DISPLAY_MESSAGE);
   lcd.clear();
+}
+
+bool takeFingerImage(String message, int valueConvertImage) {
+  int p;
+  lcd.clear();
+  lcd.print(message);
+
+  do {
+    delay(DELAY_WAIT_USER);
+    p = finger.getImage();
+  }while (p != FINGERPRINT_OK);
+
+  p = finger.image2Tz(valueConvertImage);
+  if (p != FINGERPRINT_OK)
+    return false;
+
+  lcd.clear();
+  if (finger.fingerFastSearch() == FINGERPRINT_OK) {
+    lcd.print("Finger is there");
+    delay(DELAY_DISPLAY_MESSAGE);
+    return false;
+  }
+
+  lcd.print("Image taken");
+  delay(DELAY_DISPLAY_MESSAGE);
+  lcd.clear();
+  lcd.print("Pick up finger");  
+
+  while (finger.getImage() != FINGERPRINT_NOFINGER);
+
+  lcd.clear();
+  return true;
 }
