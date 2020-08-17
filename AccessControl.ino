@@ -472,6 +472,11 @@ static int callbackFingerAddUser(void *data, int argc, char **argv, char **azCol
   }
 }
 
+static int callbackFingerDeleteUser(void *data, int argc, char **argv, char **azColName) {
+  finger.deleteModel(atoi(argv[0]));
+  return 0;
+}
+
 static int callbackSetPassword(void *data, int argc, char **argv, char **azColName) {
   password = argv[0];
   return 0;
@@ -594,9 +599,18 @@ void removeUser() {
   id = waitingForUser();
   setSlaveSelect(SPI_SD_SLAVE_PIN, SPI_RFID_SLAVE_PIN);
 
-  if(checkUser(id)) {
+  if (checkUser(id)) {
     message = ("User removed");
     lcdMessage = message;
+
+    if (id.length() == 11)    // If the ID type is cardID
+      sql = ("SELECT fingerID FROM users WHERE cardID = '" + id + "'").c_str();
+    else
+      sql = ("SELECT fingerID FROM users WHERE fingerID = '" + id + "'").c_str();
+    if (! databaseExec(dbAccessControl, sql, callbackFingerDeleteUser))
+      return;
+
+    id = userIDCard;    // If the ID type is fingerID, set the valid ID (cardID) to id
     sql = ("DELETE FROM users WHERE cardID = '" + id + "'").c_str();
     if (! databaseExec(dbAccessControl, sql, NULL))
       return;
