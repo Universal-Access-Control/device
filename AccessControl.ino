@@ -538,7 +538,7 @@ void checkAccessTask(void *parameters) {
 
     id = waitingForUser();
     setSlaveSelect(SPI_SD_SLAVE_PIN, SPI_RFID_SLAVE_PIN);
-    
+
     if (checkUser(id)) {
       message = ("Access verified");
       id = userIDCard;    // If the ID type is fingerID, set the valid ID (cardID) to id
@@ -636,8 +636,9 @@ void infoUser() {
   userExists = false;
   setSlaveSelect(SPI_SD_SLAVE_PIN, SPI_RFID_SLAVE_PIN);
 
-  if(checkUser(id)) {
+  if (checkUser(id)) {
     message = ("Display user information");
+    id = userIDCard;    // If the ID type is fingerID, set the valid ID (cardID) to id
     sql = ("SELECT name, cardID, date FROM users WHERE cardID = '" + id + "'").c_str();
     if (! databaseExec(dbAccessControl, sql, callbackInfoUser))
       return;
