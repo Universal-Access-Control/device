@@ -68,6 +68,15 @@
 // RELAY
 #define RELAY_PIN 12
 
+// BUZZER
+#define BUZZER_PIN 15
+#define BUZZER_ALLOW_REPEAT 3
+#define BUZZER_ERROR_REPEAT 1
+
+// LED
+#define LED_GREEN_PIN 32
+#define LED_RED_PIN 33
+
 // CONFIGURE
 #define CONFIGURE_PRIMITIVE_PASSWORD "11111111"
 #define CONFIGURE_TIME_ZONE WIFI_DayLightOffset_Sec == 0 ? "IRST" : "IRDT"    // Iran Standard Time (IRST), Iran Daylight Time (IRDT)
@@ -77,6 +86,8 @@
 #define FINGER_INVALID "0"
 
 // DELAY
+#define DELAY_BUZZER_ALLOW 60
+#define DELAY_BUZZER_ERROR 400
 #define DELAY_WAIT_USER 500
 #define DELAY_DISPLAY_MESSAGE 2000
 #define DELAY_DISPLAY_INFO 4000
@@ -128,6 +139,16 @@ void setup()
   digitalWrite(SPI_RFID_SLAVE_PIN, HIGH);
   SPI.begin();    // Initiate  SPI bus
   mfrc522.PCD_Init();   // Initiate MFRC522
+
+  // BUZZER
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
+
+  // LED
+  pinMode(LED_GREEN_PIN, OUTPUT);
+  digitalWrite(LED_GREEN_PIN, LOW);
+  pinMode(LED_RED_PIN, OUTPUT);
+  digitalWrite(LED_RED_PIN, LOW);
 
   // SD
   if(! storageInit())
@@ -543,12 +564,18 @@ void checkAccessTask(void *parameters) {
       message = ("Access verified");
       id = userIDCard;    // If the ID type is fingerID, set the valid ID (cardID) to id
       digitalWrite(RELAY_PIN, LOW);
+      digitalWrite(LED_GREEN_PIN, HIGH);
+      buzzerRun(BUZZER_ALLOW_REPEAT, DELAY_BUZZER_ALLOW);
       printMessage(message, "");
       digitalWrite(RELAY_PIN, HIGH);
+      digitalWrite(LED_GREEN_PIN, LOW);
     }
     else {
       message = ("Access denied");
+      digitalWrite(LED_RED_PIN, HIGH);
+      buzzerRun(BUZZER_ERROR_REPEAT, DELAY_BUZZER_ERROR);
       printMessage(message, "");
+      digitalWrite(LED_RED_PIN, LOW);
     }
 
     sql = ("INSERT INTO logs (cardID, date, action) VALUES ('" + id + "', '" + getTime() + "', '" + message + "')").c_str();
@@ -706,4 +733,13 @@ bool takeFingerImage(String message, int valueConvertImage) {
 
   lcd.clear();
   return true;
+}
+
+void buzzerRun(int soundRepeat, int buzzerDelay) {
+    for (int i = 0; i < soundRepeat; i++) {
+      digitalWrite(BUZZER_PIN, HIGH);
+      delay(buzzerDelay);
+      digitalWrite(BUZZER_PIN, LOW);
+      delay(buzzerDelay);
+  }
 }
